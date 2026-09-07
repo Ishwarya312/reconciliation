@@ -47,9 +47,6 @@ def load_ledger_file(data_file: DataFile):
     
     records = []
     for row in reader:
-        if row.get('state', '').upper() == 'CANCELLED':
-            continue
-            
         records.append(LedgerRecord(
             source_file=data_file,
             transaction_id=row['trade_id'],
@@ -72,9 +69,6 @@ def load_statement_file(data_file: DataFile):
     
     records = []
     for row in reader:
-        if row.get('status', '').upper() == 'CANCELLED':
-            continue
-            
         records.append(StatementRecord(
             source_file=data_file,
             transaction_id=row['reference'],
@@ -122,10 +116,26 @@ def run_reconciliation(ledger_file: DataFile, statement_file: DataFile) -> Recon
         statement_record__transaction_id__in=StatementRecord.objects.filter(source_file=statement_file).values('transaction_id')
     ).values_list('statement_record__transaction_id', flat=True))
 
-    ledgers = list(LedgerRecord.objects.filter(source_file=ledger_file))
-    statements = list(StatementRecord.objects.filter(source_file=statement_file))
+    ledgers_raw = list(LedgerRecord.objects.filter(source_file=ledger_file))
+    statements_raw = list(StatementRecord.objects.filter(source_file=statement_file))
     
     matches = []
+    
+    # Pass -1: Filter Cancelled
+    ledgers = []
+    for l in ledgers_raw:
+        if l.status.upper() == 'CANCELLED':
+            matches.append(MatchResult(run=run, match_type='IGNORED', ledger_record=l))
+        else:
+            ledgers.append(l)
+            
+    statements = []
+    for s in statements_raw:
+        if s.status.upper() == 'CANCELLED':
+            matches.append(MatchResult(run=run, match_type='IGNORED', statement_record=s))
+        else:
+            statements.append(s)
+            
     matched_statement_ids = set()
     
     remaining_ledgers = []

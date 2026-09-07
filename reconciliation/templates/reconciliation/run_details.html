@@ -200,8 +200,45 @@
 </script>
 
 <div class="glass-card" style="margin-top: 2rem;">
-    <h2>Exact Matches ({{ exact_matches|length }}) & Manual Matches ({{ manual_matches|length }})</h2>
-    <p style="color: var(--text-muted);">These records reconciled perfectly or were previously linked by a human and carried over.</p>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2>Matched Records</h2>
+        <span class="badge" style="background: #e2e8f0; color: var(--text-muted);">Cancelled/Ignored Records: {{ ignored_matches|length }}</span>
+    </div>
+    <p style="color: var(--text-muted); margin-bottom: 1rem;">Exact Matches ({{ exact_matches|length }}) and Manual Matches ({{ manual_matches|length }}) that reconciled perfectly or were manually linked.</p>
+    
+    {% if exact_matches or manual_matches %}
+    <table>
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Asset</th>
+                <th>Ledger ID</th>
+                <th>Statement Ref</th>
+                <th>Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for match in manual_matches %}
+            <tr>
+                <td><span class="badge badge-success">Manual</span></td>
+                <td><strong>{{ match.ledger_record.instrument }}</strong></td>
+                <td>{{ match.ledger_record.transaction_id }}</td>
+                <td>{{ match.statement_record.transaction_id }}</td>
+                <td>${{ match.ledger_record.amount }}</td>
+            </tr>
+            {% endfor %}
+            {% for match in exact_matches %}
+            <tr>
+                <td><span class="badge badge-success">Exact</span></td>
+                <td><strong>{{ match.ledger_record.instrument }}</strong></td>
+                <td>{{ match.ledger_record.transaction_id }}</td>
+                <td>{{ match.statement_record.transaction_id }}</td>
+                <td>${{ match.ledger_record.amount }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
 </div>
 
 {% endblock %}

@@ -40,6 +40,7 @@ def run_details(request, run_id):
         'manual_matches': results.filter(match_type='MANUAL'),
         'unmatched_ledger': results.filter(match_type='UNMATCHED_LEDGER'),
         'unmatched_statement': results.filter(match_type='UNMATCHED_STATEMENT'),
+        'ignored_matches': results.filter(match_type='IGNORED'),
     }
     return render(request, 'reconciliation/run_details.html', context)
 
