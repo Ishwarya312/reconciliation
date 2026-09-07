@@ -1,45 +1,52 @@
-# Reconciliation Application
+# Nexus Recon: Cryptocurrency Reconciliation Engine
 
-A simple Django application built to solve the transaction reconciliation problem, where two distinct systems record transactions with drifting amounts, drifting times, different naming conventions, and different schemas.
+Nexus Recon is a Django-based financial reconciliation engine designed to automatically match internal cryptocurrency ledger records against third-party partner statements.
 
-## Getting Started
+## How to Run It
 
-This application is fully containerized using Docker and Docker Compose.
+This application is fully containerized using Docker and Docker Compose. 
 
-### Prerequisites
-- Docker and Docker Compose installed and running on your machine.
+**Prerequisites:**
+- Docker and Docker Compose installed on your machine.
 
-### Steps
-1. Clone the repository and navigate into it.
-2. The environment variables are already configured via the `.env` file for the default setup.
-3. Build and start the containers:
+**Steps:**
+1. Clone the repository and navigate into the root directory.
+2. Build and start the containers:
    ```bash
-   docker-compose up --build
+   docker-compose up -d --build
    ```
-4. Once the database is ready and the Django server is running, the app will be available at `http://localhost:8000`.
-5. You can use the provided sample data in the `data/` directory to test the reconciliation engine:
-   - `data/ledger_initial.csv`
-   - `data/statement_initial.csv`
-   - `data/statement_correction.csv`
+3. Run the database migrations to set up the schema:
+   ```bash
+   docker-compose exec web python manage.py migrate
+   ```
+4. Access the application in your browser at: **http://localhost:8000/**
+
+**Optional:** If you want to use the Django Admin interface to view the raw database tables, you can create a superuser:
+```bash
+docker-compose exec web python manage.py createsuperuser
+```
+You can then log in at **http://localhost:8000/admin**.
 
 ## Architecture and Design Decisions
 
-- **Database Choice (PostgreSQL)**: Met the technical requirements and handles robust, relational financial data very well.
-- **Framework (Django + DRF)**: Chosen per requirements. Django's ORM makes it extremely easy to model the relationships between `LedgerRecords`, `StatementRecords`, and `MatchResults`. 
-- **Matching Logic & Engine**: 
-  - **Normalization**: Instead of having complex `if/else` statements sprinkled everywhere, we parse incoming CSVs into a standardized internal representation first (converting dates to UTC, normalizing sides like `B` -> `BUY`).
-  - **Passes**: Matching is done in passes (Exact identifiers first, then Fuzzy matching with a time and amount tolerance window). This ensures we catch the "happy path" quickly and gracefully degrade to fuzzy logic.
-- **Synchronous Processing**: To keep the initial version simple, file uploads and the reconciliation engine run synchronously during the HTTP request. 
+- **Database-Driven Engine**: Instead of keeping everything in memory, we parse CSVs into actual PostgreSQL database records (`LedgerRecord` and `StatementRecord`). This allows us to scale beyond memory limits, easily query past data, and maintain persistent state for manual human decisions.
+- **Multi-Pass Matching Logic**:
+  - *Pass 0 (Carry Over)*: Applies past human decisions (manual links or accepted unpaired records) before the engine touches them.
+  - *Pass 1 (Exact)*: Matches transactions with identical `transaction_id` / `reference`.
+  - *Pass 2 (Fuzzy)*: Uses a 2-hour time drift window and a 2% price deviation tolerance to match records where identifiers don't align perfectly.
+- **Manual Resolution Tracking**: When humans manually link two orphaned rows or flag a row as permanently unpaired, those decisions are saved. The engine queries these decisions at the start of every new run to ensure human interventions are respected indefinitely.
+- **Server-Side Rendered UI**: Built using pure HTML and CSS (a clean, light-themed glassmorphism aesthetic) served via Django templates for simplicity and speed, without the overhead of a heavy JavaScript framework. JavaScript is only used sparingly for the API requests during manual resolution.
 
 ## Limitations and Exclusions
 
-- **Asynchronous Task Queue**: In a production environment with millions of rows, processing files synchronously in a web request would timeout. I left out Celery/Redis for now to keep the setup simple and easy to run via `docker-compose`.
-- **Advanced Authentication/Authorization**: The app currently does not enforce strict user logins or roles for uploading vs. resolving matches.
-- **Dynamic Mapping Configuration**: Currently, the column mappings for the "Ledger" and "Statement" are hardcoded to the problem description formats. In a real scenario, this would be a UI configuration where a user maps columns on their first upload.
+- **Authentication & Authorization**: The application currently has no login screens or role-based access control (RBAC). Anyone who can access port 8000 can execute a reconciliation run.
+- **Complex Audit Logs**: While we track whether a match was `resolved_by_human`, we do not track *which* specific user made the change or at what exact timestamp they clicked the button.
+- **Pagination & Infinite Scroll**: If the CSV files contain hundreds of thousands of unmatched records, rendering them all on a single HTML page at once could cause browser performance issues.
+- **File Format Agnostic Parsers**: Currently, the engine expects the CSV files to have very specific headers (e.g., `trade_id`, `reference`, `gross_amount`, `total`). It does not dynamically infer column meanings for new partner formats.
 
 ## Future Enhancements
 
-1. **Implement Celery**: Offload the parsing and matching engine to background workers to handle massive file sizes seamlessly.
-2. **Audit Logging**: Implement a history table to track *who* manually matched a record and *when* (essential for compliance in financial systems).
-3. **Machine Learning / Advanced Fuzzy Matching**: For strings (like instrument names) that might be misspelled, adding a Levenshtein distance check or a simple ML classifier to suggest matches for the "Unmatched" bucket.
-4. **Interactive Dashboard**: Build a React/Vue frontend consuming the DRF API to provide a more dynamic, drag-and-drop manual matching experience instead of server-rendered Django templates.
+1. **Implement Celery / Background Workers**: CSV parsing and matching block the main web thread. Moving `run_reconciliation` to an asynchronous Celery task would allow the dashboard to show a "Processing..." state for massive files.
+2. **Dynamic Column Mapping**: Build a UI step where users upload a file and visually drag-and-drop map the CSV columns (like "Qty" or "Size") to our internal normalized fields (like `quantity`).
+3. **Advanced Audit Trails**: Integrate `django-simple-history` to track every manual resolution decision back to a specific user account.
+4. **Export Reports**: Add a button to export the `MatchResults` (the Exact, Fuzzy, and Unmatched tables) back into a downloadable Excel or CSV report for accounting teams.
