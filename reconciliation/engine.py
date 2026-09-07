@@ -90,34 +90,31 @@ def calculate_discrepancies(ledger: LedgerRecord, statement: StatementRecord) ->
     time_diff = int(abs((ledger.executed_at - statement.executed_at).total_seconds()))
     return amt_diff, time_diff
 
-def run_reconciliation(ledger_file: DataFile, statement_file: DataFile) -> ReconciliationRun:
-    run = ReconciliationRun.objects.create(
-        ledger_file=ledger_file,
-        statement_file=statement_file
-    )
+def run_reconciliation(run_id: int) -> ReconciliationRun:
+    run = ReconciliationRun.objects.get(id=run_id)
     
     # Fetch previous manual matches to carry them over
     manual_matches = MatchResult.objects.filter(
-        match_type='MANUAL',
-        ledger_record__transaction_id__in=LedgerRecord.objects.filter(source_file=ledger_file).values('transaction_id')
-    )
+        match_type='MANUAL'
+    ).select_related('ledger_record', 'statement_record')
     manual_pairs = {(m.ledger_record.transaction_id, m.statement_record.transaction_id): m for m in manual_matches if m.ledger_record and m.statement_record}
 
     # Fetch previous accepted unmatched records
     accepted_unmatched_ledgers = set(MatchResult.objects.filter(
         match_type='UNMATCHED_LEDGER', 
-        resolved_by_human=True,
-        ledger_record__transaction_id__in=LedgerRecord.objects.filter(source_file=ledger_file).values('transaction_id')
+        resolved_by_human=True
     ).values_list('ledger_record__transaction_id', flat=True))
     
     accepted_unmatched_statements = set(MatchResult.objects.filter(
         match_type='UNMATCHED_STATEMENT', 
-        resolved_by_human=True,
-        statement_record__transaction_id__in=StatementRecord.objects.filter(source_file=statement_file).values('transaction_id')
+        resolved_by_human=True
     ).values_list('statement_record__transaction_id', flat=True))
 
-    ledgers_raw = list(LedgerRecord.objects.filter(source_file=ledger_file))
-    statements_raw = list(StatementRecord.objects.filter(source_file=statement_file))
+    from django.utils import timezone
+    today = timezone.now().date()
+
+    ledgers_raw = list(LedgerRecord.objects.filter(source_file__uploaded_at__date=today))
+    statements_raw = list(StatementRecord.objects.filter(source_file__uploaded_at__date=today))
     
     matches = []
     

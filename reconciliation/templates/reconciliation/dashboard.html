@@ -4,18 +4,38 @@
 <div class="grid-2">
     <div class="glass-card">
         <h2>New Reconciliation Run</h2>
-        <form method="POST" enctype="multipart/form-data">
+        <div style="display: flex; gap: 2rem;">
+        <div style="flex: 1; padding: 1.5rem; background: rgba(59, 130, 246, 0.05); border-radius: 8px; border: 1px dashed var(--primary);">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="upload_ledger">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: var(--primary);">Upload Internal Ledger CSV</label>
+                <input type="file" name="ledger_file" accept=".csv" required style="width: 100%; margin-bottom: 1rem;">
+                <button type="submit" class="btn" style="background: var(--primary); width: 100%;">Load to Database</button>
+            </form>
+        </div>
+        
+        <div style="flex: 1; padding: 1.5rem; background: rgba(59, 130, 246, 0.05); border-radius: 8px; border: 1px dashed var(--primary);">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="upload_statement">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: var(--primary);">Upload Partner Statement CSV</label>
+                <input type="file" name="statement_file" accept=".csv" required style="width: 100%; margin-bottom: 1rem;">
+                <button type="submit" class="btn" style="background: var(--primary); width: 100%;">Load to Database</button>
+            </form>
+        </div>
+    </div>
+    
+    <div style="margin-top: 2rem; text-align: center; border-top: 1px solid var(--surface-border); padding-top: 2rem;">
+        <form method="post">
             {% csrf_token %}
-            <div class="form-group">
-                <label for="ledger_file">Internal Ledger (CSV)</label>
-                <input type="file" name="ledger_file" id="ledger_file" required>
-            </div>
-            <div class="form-group">
-                <label for="statement_file">Partner Statement (CSV)</label>
-                <input type="file" name="statement_file" id="statement_file" required>
-            </div>
-            <button type="submit" class="btn">Execute Run 🚀</button>
+            <input type="hidden" name="action" value="run_reconciliation">
+            <button type="submit" class="btn" style="font-size: 1.25rem; padding: 1rem 3rem; background: var(--success); border-color: var(--success); box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                Trigger Global Reconciliation Run
+            </button>
         </form>
+        <p style="color: var(--text-muted); margin-top: 0.5rem; font-size: 0.85rem;">This will run as a background task across all loaded files.</p>
+    </div>
     </div>
 
     <div class="glass-card">

@@ -42,8 +42,6 @@ class StatementRecord(BaseTransaction):
 class ReconciliationRun(models.Model):
     started_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
-    ledger_file = models.ForeignKey(DataFile, on_delete=models.CASCADE, related_name='ledger_runs')
-    statement_file = models.ForeignKey(DataFile, on_delete=models.CASCADE, related_name='statement_runs')
     
     def __str__(self):
         return f"Run {self.id} at {self.started_at}"

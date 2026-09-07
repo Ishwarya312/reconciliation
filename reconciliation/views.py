@@ -7,24 +7,32 @@ from .models import DataFile, ReconciliationRun, MatchResult
 from .serializers import ManualMatchSerializer, AcceptUnmatchedSerializer
 from .engine import load_ledger_file, load_statement_file, run_reconciliation
 
+from .tasks import process_global_reconciliation
+
 def dashboard(request):
     runs = ReconciliationRun.objects.all().order_by('-started_at')
     
     if request.method == 'POST':
-        ledger_csv = request.FILES.get('ledger_file')
-        statement_csv = request.FILES.get('statement_file')
+        action = request.POST.get('action')
         
-        if ledger_csv and statement_csv:
-            ledger_file = DataFile.objects.create(file=ledger_csv, file_type='LEDGER')
-            statement_file = DataFile.objects.create(file=statement_csv, file_type='STATEMENT')
-            
-            # Load Data
-            load_ledger_file(ledger_file)
-            load_statement_file(statement_file)
-            
-            # Run Reconciliation
-            run = run_reconciliation(ledger_file, statement_file)
-            messages.success(request, f"Reconciliation Run #{run.id} completed successfully.")
+        if action == 'upload_ledger':
+            ledger_csv = request.FILES.get('ledger_file')
+            if ledger_csv:
+                ledger_file = DataFile.objects.create(file=ledger_csv, file_type='LEDGER')
+                load_ledger_file(ledger_file)
+                messages.success(request, "Ledger file uploaded and loaded successfully.")
+                
+        elif action == 'upload_statement':
+            statement_csv = request.FILES.get('statement_file')
+            if statement_csv:
+                statement_file = DataFile.objects.create(file=statement_csv, file_type='STATEMENT')
+                load_statement_file(statement_file)
+                messages.success(request, "Statement file uploaded and loaded successfully.")
+                
+        elif action == 'run_reconciliation':
+            run = ReconciliationRun.objects.create()
+            process_global_reconciliation.delay(run.id)
+            messages.info(request, f"Global Reconciliation Run #{run.id} started in the background.")
             return redirect('run_details', run_id=run.id)
             
     return render(request, 'reconciliation/dashboard.html', {'runs': runs})
