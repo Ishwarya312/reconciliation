@@ -54,11 +54,23 @@
             <button id="btn-manual-match" class="btn" style="background: var(--success);" disabled>Force Link</button>
         </div>
     </div>
-    <p style="color: var(--text-muted); margin-bottom: 1rem;">
+    <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
         Select one row from <strong>Internal Ledger</strong> and one row from <strong>Partner Statement</strong> to link them together. 
         Or, select exactly ONE row and click "Accept as Unpaired" if you are certain it genuinely has no match on the other side. 
         <a href="#" onclick="clearSelections(); return false;" style="color: var(--primary); margin-left: 10px;">Clear Selections</a>
     </p>
+
+    <!-- Search and Filter Controls -->
+    <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+        <input type="text" id="searchInput" placeholder="Search by Transaction ID or Asset..." style="flex: 2; padding: 0.6rem; border: 1px solid var(--surface-border); border-radius: 6px; font-size: 0.9rem;">
+        <select id="statusFilter" style="flex: 1; padding: 0.6rem; border: 1px solid var(--surface-border); border-radius: 6px; font-size: 0.9rem; background: white;">
+            <option value="ALL">All Statuses</option>
+            <option value="MATCHED">Matched</option>
+            <option value="FUZZY">Fuzzy Matches</option>
+            <option value="UNMATCHED">Unmatched</option>
+            <option value="CANCELLED">Cancelled</option>
+        </select>
+    </div>
     
     <table style="width: 100%; border-collapse: separate; border-spacing: 0 0.5rem; text-align: left; margin-top: 1rem;">
         <thead>
@@ -179,6 +191,36 @@
             checkSelections();
         });
     });
+
+    // Filtering Logic
+    function filterResults() {
+        const query = document.getElementById('searchInput').value.toLowerCase();
+        const statusVal = document.getElementById('statusFilter').value;
+        const rows = document.querySelectorAll('table tbody tr');
+
+        rows.forEach(row => {
+            const textContent = row.textContent.toLowerCase();
+            let matchesQuery = textContent.includes(query);
+            
+            let matchesStatus = true;
+            if (statusVal !== 'ALL') {
+                const statusCellText = row.querySelector('td:first-child').textContent.trim().toUpperCase();
+                if (statusVal === 'MATCHED' && !statusCellText.includes('MATCHED')) matchesStatus = false;
+                if (statusVal === 'FUZZY' && !statusCellText.includes('FUZZY')) matchesStatus = false;
+                if (statusVal === 'UNMATCHED' && !statusCellText.includes('UNMATCHED') && !statusCellText.includes('ACCEPTED UNPAIRED')) matchesStatus = false;
+                if (statusVal === 'CANCELLED' && !statusCellText.includes('CANCELLED')) matchesStatus = false;
+            }
+            
+            if (matchesQuery && matchesStatus) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+
+    document.getElementById('searchInput').addEventListener('keyup', filterResults);
+    document.getElementById('statusFilter').addEventListener('change', filterResults);
 
     document.getElementById('btn-manual-match').addEventListener('click', async () => {
         const ledgerId = document.querySelector('input[name="ledger_select"]:checked').value;
