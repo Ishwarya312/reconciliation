@@ -4,7 +4,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import DataFile, ReconciliationRun, MatchResult, LedgerRecord, StatementRecord
-from .serializers import DataFileSerializer, MatchResultSerializer, ManualMatchSerializer
+from .serializers import DataFileSerializer, MatchResultSerializer, ManualMatchSerializer, AcceptUnmatchedSerializer
 from .engine import load_ledger_file, load_statement_file, run_reconciliation
 
 def dashboard(request):
@@ -73,5 +73,28 @@ class ReconciliationViewSet(viewsets.ViewSet):
             statement_result.delete()
             
             return Response({'status': 'Matched successfully'})
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def accept_unmatched(self, request, pk=None):
+        run = get_object_or_404(ReconciliationRun, pk=pk)
+        serializer = AcceptUnmatchedSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            ledger_id = serializer.validated_data.get('ledger_id')
+            statement_id = serializer.validated_data.get('statement_id')
+            
+            if ledger_id:
+                ledger_result = get_object_or_404(MatchResult, run=run, match_type='UNMATCHED_LEDGER', ledger_record_id=ledger_id)
+                ledger_result.resolved_by_human = True
+                ledger_result.save()
+                
+            if statement_id:
+                statement_result = get_object_or_404(MatchResult, run=run, match_type='UNMATCHED_STATEMENT', statement_record_id=statement_id)
+                statement_result.resolved_by_human = True
+                statement_result.save()
+                
+            return Response({'status': 'Accepted as unmatched successfully'})
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

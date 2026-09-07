@@ -14,3 +14,7 @@ class MatchResultSerializer(serializers.ModelSerializer):
 class ManualMatchSerializer(serializers.Serializer):
     ledger_id = serializers.IntegerField()
     statement_id = serializers.IntegerField()
+
+class AcceptUnmatchedSerializer(serializers.Serializer):
+    ledger_id = serializers.IntegerField(required=False, allow_null=True)
+    statement_id = serializers.IntegerField(required=False, allow_null=True)

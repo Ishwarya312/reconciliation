@@ -39,9 +39,16 @@
 <div class="glass-card" style="margin-bottom: 2rem;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <h2>Manual Resolution</h2>
-        <button id="btn-manual-match" class="btn" style="background: var(--success);" disabled>Link Selected</button>
+        <div>
+            <button id="btn-accept-unpaired" class="btn" style="background: var(--warning); margin-right: 1rem;" disabled>Accept as Unpaired</button>
+            <button id="btn-manual-match" class="btn" style="background: var(--success);" disabled>Link Selected</button>
+        </div>
     </div>
-    <p style="color: var(--text-muted); margin-bottom: 1rem;">Select one unmatched ledger record and one unmatched statement record, then click Link Selected. This decision will carry over to future runs.</p>
+    <p style="color: var(--text-muted); margin-bottom: 1rem;">
+        Select one unmatched ledger record and one unmatched statement record to link them. 
+        Or, select exactly ONE record and click "Accept as Unpaired" if it genuinely has no match. 
+        <a href="#" onclick="clearSelections(); return false;" style="color: var(--primary); margin-left: 10px;">Clear Selections</a>
+    </p>
     
     <div class="grid-2">
         <div style="border: 1px solid var(--danger); padding: 1rem; border-radius: 8px;">
@@ -58,12 +65,14 @@
                 </thead>
                 <tbody>
                     {% for match in unmatched_ledger %}
+                    {% if not match.resolved_by_human %}
                     <tr>
                         <td><input type="radio" name="ledger_select" value="{{ match.ledger_record.id }}" onchange="checkSelections()"></td>
                         <td>{{ match.ledger_record.transaction_id }}</td>
                         <td>{{ match.ledger_record.instrument }}</td>
                         <td>${{ match.ledger_record.amount }}</td>
                     </tr>
+                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -86,12 +95,14 @@
                 </thead>
                 <tbody>
                     {% for match in unmatched_statement %}
+                    {% if not match.resolved_by_human %}
                     <tr>
                         <td><input type="radio" name="statement_select" value="{{ match.statement_record.id }}" onchange="checkSelections()"></td>
                         <td>{{ match.statement_record.transaction_id }}</td>
                         <td>{{ match.statement_record.instrument }}</td>
                         <td>${{ match.statement_record.amount }}</td>
                     </tr>
+                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -103,15 +114,30 @@
 </div>
 
 <script>
+    function clearSelections() {
+        const radios = document.querySelectorAll('input[type="radio"]');
+        radios.forEach(r => r.checked = false);
+        checkSelections();
+    }
+
     function checkSelections() {
         const ledgerSelected = document.querySelector('input[name="ledger_select"]:checked');
         const stmtSelected = document.querySelector('input[name="statement_select"]:checked');
-        const btn = document.getElementById('btn-manual-match');
+        const btnLink = document.getElementById('btn-manual-match');
+        const btnAccept = document.getElementById('btn-accept-unpaired');
         
+        // Link requires exactly one of each
         if (ledgerSelected && stmtSelected) {
-            btn.disabled = false;
+            btnLink.disabled = false;
         } else {
-            btn.disabled = true;
+            btnLink.disabled = true;
+        }
+        
+        // Accept as unpaired requires EXACTLY ONE selected total
+        if ((ledgerSelected && !stmtSelected) || (!ledgerSelected && stmtSelected)) {
+            btnAccept.disabled = false;
+        } else {
+            btnAccept.disabled = true;
         }
     }
 
@@ -136,6 +162,35 @@
                 window.location.reload();
             } else {
                 alert('Failed to manual match');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error making request');
+        }
+    });
+
+    document.getElementById('btn-accept-unpaired').addEventListener('click', async () => {
+        const ledgerEl = document.querySelector('input[name="ledger_select"]:checked');
+        const stmtEl = document.querySelector('input[name="statement_select"]:checked');
+        
+        const payload = {};
+        if (ledgerEl) payload.ledger_id = ledgerEl.value;
+        if (stmtEl) payload.statement_id = stmtEl.value;
+        
+        try {
+            const response = await fetch('/api/runs/{{ run.id }}/accept_unmatched/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                alert('Failed to accept unmatched');
             }
         } catch (e) {
             console.error(e);

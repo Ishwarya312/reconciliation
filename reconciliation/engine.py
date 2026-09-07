@@ -109,6 +109,19 @@ def run_reconciliation(ledger_file: DataFile, statement_file: DataFile) -> Recon
     )
     manual_pairs = {(m.ledger_record.transaction_id, m.statement_record.transaction_id): m for m in manual_matches if m.ledger_record and m.statement_record}
 
+    # Fetch previous accepted unmatched records
+    accepted_unmatched_ledgers = set(MatchResult.objects.filter(
+        match_type='UNMATCHED_LEDGER', 
+        resolved_by_human=True,
+        ledger_record__transaction_id__in=LedgerRecord.objects.filter(source_file=ledger_file).values('transaction_id')
+    ).values_list('ledger_record__transaction_id', flat=True))
+    
+    accepted_unmatched_statements = set(MatchResult.objects.filter(
+        match_type='UNMATCHED_STATEMENT', 
+        resolved_by_human=True,
+        statement_record__transaction_id__in=StatementRecord.objects.filter(source_file=statement_file).values('transaction_id')
+    ).values_list('statement_record__transaction_id', flat=True))
+
     ledgers = list(LedgerRecord.objects.filter(source_file=ledger_file))
     statements = list(StatementRecord.objects.filter(source_file=statement_file))
     
@@ -117,10 +130,23 @@ def run_reconciliation(ledger_file: DataFile, statement_file: DataFile) -> Recon
     
     remaining_ledgers = []
     
-    # Pass 0: Carry over manual matches
+    # Pass 0: Carry over manual matches and accepted unmatched
     for ledger in ledgers:
+        if ledger.transaction_id in accepted_unmatched_ledgers:
+            matches.append(MatchResult(
+                run=run,
+                match_type='UNMATCHED_LEDGER',
+                ledger_record=ledger,
+                resolved_by_human=True
+            ))
+            continue
+
         manual_match_found = False
         for stmt in statements:
+            if stmt.transaction_id in accepted_unmatched_statements:
+                # We handle statements below
+                pass
+                
             if (ledger.transaction_id, stmt.transaction_id) in manual_pairs and stmt.id not in matched_statement_ids:
                 amt_diff, time_diff = calculate_discrepancies(ledger, stmt)
                 matches.append(MatchResult(
@@ -141,6 +167,17 @@ def run_reconciliation(ledger_file: DataFile, statement_file: DataFile) -> Recon
 
     ledgers = remaining_ledgers
     remaining_ledgers = []
+    
+    # Handle accepted unmatched statements
+    for stmt in statements:
+        if stmt.transaction_id in accepted_unmatched_statements and stmt.id not in matched_statement_ids:
+            matches.append(MatchResult(
+                run=run,
+                match_type='UNMATCHED_STATEMENT',
+                statement_record=stmt,
+                resolved_by_human=True
+            ))
+            matched_statement_ids.add(stmt.id)
 
     # Pass 1: Exact Match by ID
     for ledger in ledgers:
