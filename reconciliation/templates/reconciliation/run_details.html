@@ -1,0 +1,152 @@
+{% extends 'reconciliation/base.html' %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h2>Run #{{ run.id }} Details</h2>
+    <span style="color: var(--text-muted);">Executed at {{ run.started_at|date:"M d, Y H:i:s" }}</span>
+</div>
+
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <h2>Discrepancies (Fuzzy Matches)</h2>
+    {% if fuzzy_matches %}
+    <table>
+        <thead>
+            <tr>
+                <th>Asset</th>
+                <th>Ledger ID</th>
+                <th>Statement Ref</th>
+                <th>Amount Drift</th>
+                <th>Time Drift (s)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for match in fuzzy_matches %}
+            <tr>
+                <td><strong>{{ match.ledger_record.instrument }}</strong></td>
+                <td>{{ match.ledger_record.transaction_id }}</td>
+                <td>{{ match.statement_record.transaction_id }}</td>
+                <td style="color: var(--warning); font-weight: bold;">{{ match.amount_discrepancy }}</td>
+                <td style="color: var(--warning); font-weight: bold;">{{ match.time_discrepancy_seconds }}s</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: var(--text-muted);">No discrepancies found! 🎉</p>
+    {% endif %}
+</div>
+
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2>Manual Resolution</h2>
+        <button id="btn-manual-match" class="btn" style="background: var(--success);" disabled>Link Selected</button>
+    </div>
+    <p style="color: var(--text-muted); margin-bottom: 1rem;">Select one unmatched ledger record and one unmatched statement record, then click Link Selected. This decision will carry over to future runs.</p>
+    
+    <div class="grid-2">
+        <div style="border: 1px solid var(--danger); padding: 1rem; border-radius: 8px;">
+            <h3>Unmatched Ledger (Yours)</h3>
+            {% if unmatched_ledger %}
+            <table id="table-ledger">
+                <thead>
+                    <tr>
+                        <th>Select</th>
+                        <th>ID</th>
+                        <th>Asset</th>
+                        <th>Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for match in unmatched_ledger %}
+                    <tr>
+                        <td><input type="radio" name="ledger_select" value="{{ match.ledger_record.id }}" onchange="checkSelections()"></td>
+                        <td>{{ match.ledger_record.transaction_id }}</td>
+                        <td>{{ match.ledger_record.instrument }}</td>
+                        <td>${{ match.ledger_record.amount }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color: var(--text-muted); margin-top: 1rem;">All clear!</p>
+            {% endif %}
+        </div>
+
+        <div style="border: 1px solid var(--warning); padding: 1rem; border-radius: 8px;">
+            <h3>Unmatched Statement (Theirs)</h3>
+            {% if unmatched_statement %}
+            <table id="table-statement">
+                <thead>
+                    <tr>
+                        <th>Select</th>
+                        <th>Ref</th>
+                        <th>Asset</th>
+                        <th>Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for match in unmatched_statement %}
+                    <tr>
+                        <td><input type="radio" name="statement_select" value="{{ match.statement_record.id }}" onchange="checkSelections()"></td>
+                        <td>{{ match.statement_record.transaction_id }}</td>
+                        <td>{{ match.statement_record.instrument }}</td>
+                        <td>${{ match.statement_record.amount }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color: var(--text-muted); margin-top: 1rem;">All clear!</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+    function checkSelections() {
+        const ledgerSelected = document.querySelector('input[name="ledger_select"]:checked');
+        const stmtSelected = document.querySelector('input[name="statement_select"]:checked');
+        const btn = document.getElementById('btn-manual-match');
+        
+        if (ledgerSelected && stmtSelected) {
+            btn.disabled = false;
+        } else {
+            btn.disabled = true;
+        }
+    }
+
+    document.getElementById('btn-manual-match').addEventListener('click', async () => {
+        const ledgerId = document.querySelector('input[name="ledger_select"]:checked').value;
+        const stmtId = document.querySelector('input[name="statement_select"]:checked').value;
+        
+        try {
+            const response = await fetch('/api/runs/{{ run.id }}/manual_match/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({
+                    ledger_id: ledgerId,
+                    statement_id: stmtId
+                })
+            });
+            
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                alert('Failed to manual match');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error making request');
+        }
+    });
+</script>
+
+<div class="glass-card" style="margin-top: 2rem;">
+    <h2>Exact Matches ({{ exact_matches|length }}) & Manual Matches ({{ manual_matches|length }})</h2>
+    <p style="color: var(--text-muted);">These records reconciled perfectly or were previously linked by a human and carried over.</p>
+</div>
+
+{% endblock %}
