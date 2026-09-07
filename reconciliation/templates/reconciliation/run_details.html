@@ -62,15 +62,9 @@
 <div class="glass-card" style="margin-bottom: 2rem;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <h2>Reconciliation Results</h2>
-        <div>
-            <button id="btn-accept-unpaired" class="btn" style="background: var(--warning); margin-right: 1rem;" disabled>Accept as Unpaired</button>
-            <button id="btn-manual-match" class="btn" style="background: var(--success);" disabled>Force Link</button>
-        </div>
     </div>
     <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
-        Select one row from <strong>Internal Ledger</strong> and one row from <strong>Partner Statement</strong> to link them together. 
-        Or, select exactly ONE row and click "Accept as Unpaired" if you are certain it genuinely has no match on the other side. 
-        <a href="#" onclick="clearSelections(); return false;" style="color: var(--primary); margin-left: 10px;">Clear Selections</a>
+        Click <strong>Resolve</strong> on any unmatched record to automatically find its best pair or mark it as unpaired.
     </p>
 
     <!-- Search and Filter Controls -->
@@ -122,8 +116,7 @@
                     {% if result.ledger_record %}
                         <div style="display: flex; align-items: center; gap: 12px;">
                             {% if result.match_type == 'UNMATCHED_LEDGER' and not result.resolved_by_human %}
-                                <input type="radio" name="ledger_select" id="ledger_{{ result.ledger_record.id }}" value="{{ result.ledger_record.id }}" onchange="checkSelections()" style="display: none;">
-                                <label for="ledger_{{ result.ledger_record.id }}" class="btn-resolve">Resolve</label>
+                                <button class="btn-resolve" onclick="openResolutionModal('ledger_id', {{ result.ledger_record.id }})">Resolve</button>
                             {% endif %}
                             <div>
                                 <div style="font-weight: 600; color: var(--text-main); margin-bottom: 4px;">{{ result.ledger_record.transaction_id }}</div>
@@ -144,8 +137,7 @@
                     {% if result.statement_record %}
                         <div style="display: flex; align-items: center; gap: 12px;">
                             {% if result.match_type == 'UNMATCHED_STATEMENT' and not result.resolved_by_human %}
-                                <input type="radio" name="statement_select" id="stmt_{{ result.statement_record.id }}" value="{{ result.statement_record.id }}" onchange="checkSelections()" style="display: none;">
-                                <label for="stmt_{{ result.statement_record.id }}" class="btn-resolve">Resolve</label>
+                                <button class="btn-resolve" onclick="openResolutionModal('statement_id', {{ result.statement_record.id }})">Resolve</button>
                             {% endif %}
                             <div>
                                 <div style="font-weight: 600; color: var(--text-main); margin-bottom: 4px;">{{ result.statement_record.transaction_id }}</div>
@@ -166,46 +158,73 @@
     </table>
 </div>
 
+<!-- Resolution Modal -->
+<div id="resolutionModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+    <div style="background: var(--surface-color); width: 800px; max-width: 90vw; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); overflow: hidden;">
+        <!-- Header -->
+        <div style="padding: 1.5rem; border-bottom: 1px solid var(--surface-border); display: flex; justify-content: space-between; align-items: center; background: rgba(59, 130, 246, 0.05);">
+            <h3 style="margin: 0; color: var(--primary); font-size: 1.25rem;">Intelligent Resolution</h3>
+            <button onclick="closeModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+        </div>
+        
+        <!-- Body (Loading) -->
+        <div id="modalLoading" style="padding: 4rem; text-align: center;">
+            <div style="margin: 0 auto; width: 30px; height: 30px; border: 3px solid rgba(59,130,246,0.2); border-left-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <p style="margin-top: 1rem; color: var(--text-muted);">Finding best match...</p>
+        </div>
+
+        <!-- Body (Content) -->
+        <div id="modalContent" style="display: none; padding: 1.5rem;">
+            <div style="display: flex; gap: 2rem;">
+                <!-- Target -->
+                <div style="flex: 1;">
+                    <div style="text-transform: uppercase; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); margin-bottom: 0.5rem; letter-spacing: 0.05em;">Your Record</div>
+                    <div style="border: 1px solid var(--surface-border); border-radius: 8px; padding: 1rem; background: rgba(255,255,255,0.5);">
+                        <div id="targetId" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 0.5rem;"></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span style="color: var(--text-muted);">Amount</span>
+                            <strong id="targetAmount"></strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span style="color: var(--text-muted);">Asset & Side</span>
+                            <span id="targetAsset"></span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: var(--text-muted);">Date</span>
+                            <span id="targetDate" style="font-size: 0.85rem;"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Divider -->
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 40px;">
+                    <div style="height: 100%; border-left: 2px dashed var(--surface-border);"></div>
+                    <div id="matchScore" style="background: var(--success); color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 700; position: absolute;">95%</div>
+                </div>
+
+                <!-- Suggestion -->
+                <div style="flex: 1;">
+                    <div style="text-transform: uppercase; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); margin-bottom: 0.5rem; letter-spacing: 0.05em;">Suggested Match</div>
+                    <div id="suggestionBox" style="border: 2px solid var(--primary); border-radius: 8px; padding: 1rem; background: rgba(59,130,246,0.05); position: relative;">
+                        <!-- Content injected via JS -->
+                    </div>
+                    <div id="noSuggestionBox" style="display: none; border: 1px dashed var(--surface-border); border-radius: 8px; padding: 2rem 1rem; text-align: center; color: var(--text-muted);">
+                        No unmatched records found on the other side.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="padding: 1.5rem; border-top: 1px solid var(--surface-border); display: flex; justify-content: space-between; background: rgba(0,0,0,0.02);">
+            <button id="modalBtnUnpaired" class="btn" style="background: white; color: var(--text-main); border: 1px solid var(--surface-border);">Mark as Unpaired</button>
+            <button id="modalBtnLink" class="btn" style="background: var(--success); border-color: var(--success);">Link Suggestion</button>
+        </div>
+    </div>
+</div>
+
 <script>
-    function clearSelections() {
-        const radios = document.querySelectorAll('input[type="radio"]');
-        radios.forEach(r => r.checked = false);
-        checkSelections();
-    }
-
-    function checkSelections() {
-        const ledgerSelected = document.querySelector('input[name="ledger_select"]:checked');
-        const stmtSelected = document.querySelector('input[name="statement_select"]:checked');
-        const btnLink = document.getElementById('btn-manual-match');
-        const btnAccept = document.getElementById('btn-accept-unpaired');
-        
-        // Link requires exactly one of each
-        if (ledgerSelected && stmtSelected) {
-            btnLink.disabled = false;
-        } else {
-            btnLink.disabled = true;
-        }
-        
-        // Accept as unpaired requires EXACTLY ONE selected total
-        if ((ledgerSelected && !stmtSelected) || (!ledgerSelected && stmtSelected)) {
-            btnAccept.disabled = false;
-        } else {
-            btnAccept.disabled = true;
-        }
-    }
-
-    // Allow clicking the resolve buttons to toggle them on and off
-    document.querySelectorAll('.btn-resolve').forEach(btn => {
-        btn.addEventListener('click', function(e) {
-            e.preventDefault(); // Stop label from instantly checking it
-            const radioId = this.getAttribute('for');
-            const radio = document.getElementById(radioId);
-            radio.checked = !radio.checked; // Toggle the state
-            checkSelections();
-        });
-    });
-
-    // Filtering Logic
+    // Filtering Logic (Kept from original)
     function filterResults() {
         const query = document.getElementById('searchInput').value.toLowerCase();
         const statusVal = document.getElementById('statusFilter').value;
@@ -218,10 +237,10 @@
             let matchesStatus = true;
             if (statusVal !== 'ALL') {
                 const statusCellText = row.querySelector('td:first-child').textContent.trim().toUpperCase();
-                if (statusVal === 'MATCHED' && !statusCellText.includes('MATCHED')) matchesStatus = false;
-                if (statusVal === 'FUZZY' && !statusCellText.includes('FUZZY')) matchesStatus = false;
-                if (statusVal === 'UNMATCHED' && !statusCellText.includes('UNMATCHED') && !statusCellText.includes('ACCEPTED UNPAIRED')) matchesStatus = false;
-                if (statusVal === 'CANCELLED' && !statusCellText.includes('CANCELLED')) matchesStatus = false;
+                if (statusVal === 'MATCHED' && !statusCellText.startsWith('MATCHED')) matchesStatus = false;
+                if (statusVal === 'FUZZY' && !statusCellText.startsWith('FUZZY')) matchesStatus = false;
+                if (statusVal === 'UNMATCHED' && !statusCellText.startsWith('UNMATCHED') && !statusCellText.startsWith('ACCEPTED UNPAIRED')) matchesStatus = false;
+                if (statusVal === 'CANCELLED' && !statusCellText.startsWith('CANCELLED')) matchesStatus = false;
             }
             
             if (matchesQuery && matchesStatus) {
@@ -235,61 +254,92 @@
     document.getElementById('searchInput').addEventListener('keyup', filterResults);
     document.getElementById('statusFilter').addEventListener('change', filterResults);
 
-    document.getElementById('btn-manual-match').addEventListener('click', async () => {
-        const ledgerId = document.querySelector('input[name="ledger_select"]:checked').value;
-        const stmtId = document.querySelector('input[name="statement_select"]:checked').value;
+    // Modal Logic
+    let currentTargetId = null;
+    let currentTargetType = null;
+    let currentSuggestionId = null;
+
+    function openResolutionModal(type, id) {
+        currentTargetType = type;
+        currentTargetId = id;
         
-        try {
-            const response = await fetch('/api/runs/{{ run.id }}/manual_match/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
-                body: JSON.stringify({
-                    ledger_id: ledgerId,
-                    statement_id: stmtId
-                })
+        document.getElementById('resolutionModal').style.display = 'flex';
+        document.getElementById('modalContent').style.display = 'none';
+        document.getElementById('modalLoading').style.display = 'block';
+        document.getElementById('modalBtnLink').disabled = true;
+        
+        fetch(`/api/runs/{{ run.id }}/suggest_match/?${type}=${id}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('modalLoading').style.display = 'none';
+                document.getElementById('modalContent').style.display = 'block';
+                
+                // Populate Target
+                document.getElementById('targetId').innerText = data.target.transaction_id;
+                document.getElementById('targetAmount').innerText = '$' + data.target.amount;
+                document.getElementById('targetAsset').innerText = data.target.side + ' ' + data.target.instrument;
+                document.getElementById('targetDate').innerText = data.target.executed_at;
+                
+                // Populate Suggestion
+                if (data.suggestion) {
+                    currentSuggestionId = data.suggestion.id;
+                    document.getElementById('suggestionBox').style.display = 'block';
+                    document.getElementById('noSuggestionBox').style.display = 'none';
+                    document.getElementById('matchScore').innerText = data.score + '% Match';
+                    document.getElementById('matchScore').style.background = data.score > 80 ? 'var(--success)' : (data.score > 50 ? 'var(--warning)' : 'var(--danger)');
+                    
+                    document.getElementById('suggestionBox').innerHTML = `
+                        <div style="position: absolute; top: -10px; right: 10px; background: var(--primary); color: white; font-size: 0.65rem; padding: 2px 8px; border-radius: 10px; font-weight: 600;">BEST GUESS</div>
+                        <div style="font-weight: 700; font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--primary);">${data.suggestion.transaction_id}</div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span style="color: var(--text-muted);">Amount</span>
+                            <strong>$${data.suggestion.amount}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span style="color: var(--text-muted);">Asset & Side</span>
+                            <span>${data.suggestion.side} ${data.suggestion.instrument}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: var(--text-muted);">Date</span>
+                            <span style="font-size: 0.85rem;">${data.suggestion.executed_at}</span>
+                        </div>
+                    `;
+                    document.getElementById('modalBtnLink').disabled = false;
+                } else {
+                    currentSuggestionId = null;
+                    document.getElementById('suggestionBox').style.display = 'none';
+                    document.getElementById('noSuggestionBox').style.display = 'block';
+                    document.getElementById('matchScore').innerText = '0%';
+                    document.getElementById('matchScore').style.background = 'var(--text-muted)';
+                }
             });
+    }
+
+    function closeModal() {
+        document.getElementById('resolutionModal').style.display = 'none';
+    }
+
+    document.getElementById('modalBtnLink').addEventListener('click', async () => {
+        const payload = currentTargetType === 'ledger_id' ? 
+            { ledger_id: currentTargetId, statement_id: currentSuggestionId } : 
+            { ledger_id: currentSuggestionId, statement_id: currentTargetId };
             
-            if (response.ok) {
-                window.location.reload();
-            } else {
-                alert('Failed to manual match');
-            }
-        } catch (e) {
-            console.error(e);
-            alert('Error making request');
-        }
+        await fetch('/api/runs/{{ run.id }}/manual_match/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+            body: JSON.stringify(payload)
+        });
+        window.location.reload();
     });
 
-    document.getElementById('btn-accept-unpaired').addEventListener('click', async () => {
-        const ledgerEl = document.querySelector('input[name="ledger_select"]:checked');
-        const stmtEl = document.querySelector('input[name="statement_select"]:checked');
-        
-        const payload = {};
-        if (ledgerEl) payload.ledger_id = ledgerEl.value;
-        if (stmtEl) payload.statement_id = stmtEl.value;
-        
-        try {
-            const response = await fetch('/api/runs/{{ run.id }}/accept_unmatched/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
-                body: JSON.stringify(payload)
-            });
-            
-            if (response.ok) {
-                window.location.reload();
-            } else {
-                alert('Failed to accept unmatched');
-            }
-        } catch (e) {
-            console.error(e);
-            alert('Error making request');
-        }
+    document.getElementById('modalBtnUnpaired').addEventListener('click', async () => {
+        const payload = currentTargetType === 'ledger_id' ? { ledger_id: currentTargetId } : { statement_id: currentTargetId };
+        await fetch('/api/runs/{{ run.id }}/accept_unmatched/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+            body: JSON.stringify(payload)
+        });
+        window.location.reload();
     });
 </script>
 

@@ -3,7 +3,7 @@ from django.contrib import messages
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import DataFile, ReconciliationRun, MatchResult
+from .models import DataFile, ReconciliationRun, MatchResult, LedgerRecord, StatementRecord
 from .serializers import ManualMatchSerializer, AcceptUnmatchedSerializer
 from .engine import load_ledger_file, load_statement_file, run_reconciliation
 
@@ -115,3 +115,77 @@ class ReconciliationViewSet(viewsets.ViewSet):
             return Response({'status': 'Accepted as unmatched successfully'})
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'])
+    def suggest_match(self, request, pk=None):
+        run = get_object_or_404(ReconciliationRun, pk=pk)
+        ledger_id = request.query_params.get('ledger_id')
+        statement_id = request.query_params.get('statement_id')
+        
+        target = None
+        candidates = []
+        is_ledger = False
+        
+        if ledger_id:
+            target = get_object_or_404(LedgerRecord, pk=ledger_id)
+            candidates = StatementRecord.objects.filter(matchresult__run=run, matchresult__match_type='UNMATCHED_STATEMENT', matchresult__resolved_by_human=False)
+            is_ledger = True
+        elif statement_id:
+            target = get_object_or_404(StatementRecord, pk=statement_id)
+            candidates = LedgerRecord.objects.filter(matchresult__run=run, matchresult__match_type='UNMATCHED_LEDGER', matchresult__resolved_by_human=False)
+        else:
+            return Response({"error": "Provide ledger_id or statement_id"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        best_match = None
+        highest_score = 0
+        
+        for cand in candidates:
+            score = 100
+            
+            if target.instrument != cand.instrument:
+                score -= 20
+            if target.side != cand.side:
+                score -= 20
+                
+            amount_diff = abs(target.amount - cand.amount)
+            max_amt = max(target.amount, cand.amount)
+            if max_amt > 0:
+                percent_diff = amount_diff / max_amt
+                score -= float(percent_diff) * 40 # Up to 40 point penalty
+                
+            time_diff = abs((target.executed_at - cand.executed_at).total_seconds())
+            days_diff = time_diff / (24 * 3600)
+            score -= float(days_diff) * 10 # 10 points per day diff
+            
+            score = max(0, min(100, score))
+            
+            if score > highest_score:
+                highest_score = score
+                best_match = cand
+                
+        response_data = {
+            "target": {
+                "id": target.id,
+                "transaction_id": target.transaction_id,
+                "instrument": target.instrument,
+                "side": target.side,
+                "amount": str(target.amount),
+                "executed_at": target.executed_at.strftime('%Y-%m-%d %H:%M:%S'),
+                "type": "Ledger" if is_ledger else "Statement"
+            },
+            "suggestion": None,
+            "score": round(highest_score, 1)
+        }
+        
+        if best_match:
+            response_data["suggestion"] = {
+                "id": best_match.id,
+                "transaction_id": best_match.transaction_id,
+                "instrument": best_match.instrument,
+                "side": best_match.side,
+                "amount": str(best_match.amount),
+                "executed_at": best_match.executed_at.strftime('%Y-%m-%d %H:%M:%S'),
+                "type": "Statement" if is_ledger else "Ledger"
+            }
+            
+        return Response(response_data)
