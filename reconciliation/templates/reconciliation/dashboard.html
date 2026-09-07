@@ -7,7 +7,7 @@
         <form method="POST" enctype="multipart/form-data">
             {% csrf_token %}
             <div class="form-group">
-                <label for="ledger_file">Your Ledger (CSV)</label>
+                <label for="ledger_file">Internal Ledger (CSV)</label>
                 <input type="file" name="ledger_file" id="ledger_file" required>
             </div>
             <div class="form-group">
@@ -34,7 +34,8 @@
                 <tr>
                     <td>#{{ run.id }}</td>
                     <td>{{ run.started_at|date:"M d, Y H:i" }}</td>
-                    <td><a href="{% url 'run_details' run.id %}" class="btn" style="padding: 0.5rem 1rem; font-size: 0.85rem;">View</a></td>
+                    <td><a href="{% url 'run_details' run.id %}" class="btn"
+                            style="padding: 0.5rem 1rem; font-size: 0.85rem;">View</a></td>
                 </tr>
                 {% endfor %}
             </tbody>

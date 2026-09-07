@@ -1,116 +1,144 @@
 {% extends 'reconciliation/base.html' %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
     <h2>Run #{{ run.id }} Details</h2>
     <span style="color: var(--text-muted);">Executed at {{ run.started_at|date:"M d, Y H:i:s" }}</span>
 </div>
 
+<div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+    <div style="background: var(--surface-color); padding: 1rem; border-radius: 8px; border: 1px solid var(--success); flex: 1; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <div style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">Matched</div>
+        <div style="font-size: 1.75rem; font-weight: 700; color: var(--success); margin-top: 0.25rem;">{{ matched_count }}</div>
+    </div>
+    <div style="background: var(--surface-color); padding: 1rem; border-radius: 8px; border: 1px solid var(--warning); flex: 1; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <div style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">Fuzzy Matches</div>
+        <div style="font-size: 1.75rem; font-weight: 700; color: var(--warning); margin-top: 0.25rem;">{{ fuzzy_matches|length }}</div>
+    </div>
+    <div style="background: var(--surface-color); padding: 1rem; border-radius: 8px; border: 1px solid var(--danger); flex: 1; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <div style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">Unmatched</div>
+        <div style="font-size: 1.75rem; font-weight: 700; color: var(--danger); margin-top: 0.25rem;">{{ unmatched_count }}</div>
+    </div>
+    <div style="background: var(--surface-color); padding: 1rem; border-radius: 8px; border: 1px solid #cbd5e1; flex: 1; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <div style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">Cancelled</div>
+        <div style="font-size: 1.75rem; font-weight: 700; color: var(--text-muted); margin-top: 0.25rem;">{{ ignored_matches|length }}</div>
+    </div>
+</div>
+
+<style>
+    .btn-resolve {
+        display: inline-block;
+        padding: 0.4rem 0.8rem;
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--primary);
+        border: 1px solid var(--primary);
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-resolve:hover {
+        background: rgba(59, 130, 246, 0.2);
+    }
+    input[type="radio"]:checked + .btn-resolve {
+        background: var(--primary);
+        color: white;
+    }
+</style>
 <div class="glass-card" style="margin-bottom: 2rem;">
-    <h2>Discrepancies (Fuzzy Matches)</h2>
-    {% if fuzzy_matches %}
-    <table>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2>Reconciliation Results</h2>
+        <div>
+            <button id="btn-accept-unpaired" class="btn" style="background: var(--warning); margin-right: 1rem;" disabled>Accept as Unpaired</button>
+            <button id="btn-manual-match" class="btn" style="background: var(--success);" disabled>Force Link</button>
+        </div>
+    </div>
+    <p style="color: var(--text-muted); margin-bottom: 1rem;">
+        Select one row from <strong>Internal Ledger</strong> and one row from <strong>Partner Statement</strong> to link them together. 
+        Or, select exactly ONE row and click "Accept as Unpaired" if you are certain it genuinely has no match on the other side. 
+        <a href="#" onclick="clearSelections(); return false;" style="color: var(--primary); margin-left: 10px;">Clear Selections</a>
+    </p>
+    
+    <table style="width: 100%; border-collapse: separate; border-spacing: 0 0.5rem; text-align: left; margin-top: 1rem;">
         <thead>
             <tr>
-                <th>Asset</th>
-                <th>Ledger ID</th>
-                <th>Statement Ref</th>
-                <th>Amount Drift</th>
-                <th>Time Drift (s)</th>
+                <th style="width: 15%; padding: 0.5rem 1rem;">Status</th>
+                <th style="width: 42%; padding: 0.5rem 1rem;">Internal Ledger</th>
+                <th style="width: 42%; padding: 0.5rem 1rem;">Partner Statement</th>
             </tr>
         </thead>
         <tbody>
-            {% for match in fuzzy_matches %}
-            <tr>
-                <td><strong>{{ match.ledger_record.instrument }}</strong></td>
-                <td>{{ match.ledger_record.transaction_id }}</td>
-                <td>{{ match.statement_record.transaction_id }}</td>
-                <td style="color: var(--warning); font-weight: bold;">{{ match.amount_discrepancy }}</td>
-                <td style="color: var(--warning); font-weight: bold;">{{ match.time_discrepancy_seconds }}s</td>
+            {% for result in results %}
+            <tr style="background: rgba(255, 255, 255, 0.4); box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                <!-- Status Column -->
+                <td style="padding: 1rem; border-top-left-radius: 8px; border-bottom-left-radius: 8px;">
+                    {% if result.match_type == 'EXACT' or result.match_type == 'MANUAL' %}
+                        <span class="badge badge-success">Matched</span>
+                    {% elif result.match_type == 'FUZZY' %}
+                        <span style="color: var(--warning); font-weight: 600; font-size: 0.85rem;">Fuzzy Match</span>
+                        <div style="color: var(--danger); font-size: 0.75rem; margin-top: 4px;">
+                            {% if result.amount_discrepancy != 0 %}Diff: ${{ result.amount_discrepancy }}<br>{% endif %}
+                            {% if result.time_discrepancy_seconds != 0 %}Drift: {{ result.time_discrepancy_seconds }}s{% endif %}
+                        </div>
+                    {% elif result.match_type == 'IGNORED' %}
+                        <span class="badge" style="background: #e2e8f0; color: var(--text-muted);">Cancelled</span>
+                    {% elif result.match_type == 'UNMATCHED_LEDGER' or result.match_type == 'UNMATCHED_STATEMENT' %}
+                        {% if result.resolved_by_human %}
+                            <span class="badge badge-warning">Accepted Unpaired</span>
+                        {% else %}
+                            <span class="badge badge-danger">Unmatched</span>
+                        {% endif %}
+                    {% endif %}
+                </td>
+
+                <!-- Internal Ledger Column -->
+                <td style="padding: 1rem; border-left: 1px solid rgba(0,0,0,0.05);">
+                    {% if result.ledger_record %}
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            {% if result.match_type == 'UNMATCHED_LEDGER' and not result.resolved_by_human %}
+                                <input type="radio" name="ledger_select" id="ledger_{{ result.ledger_record.id }}" value="{{ result.ledger_record.id }}" onchange="checkSelections()" style="display: none;">
+                                <label for="ledger_{{ result.ledger_record.id }}" class="btn-resolve">Resolve</label>
+                            {% endif %}
+                            <div>
+                                <div style="font-weight: 600; color: var(--text-main); margin-bottom: 4px;">{{ result.ledger_record.transaction_id }}</div>
+                                <div style="font-size: 0.85rem; color: var(--text-muted);">
+                                    <span style="display: inline-block; min-width: 40px; font-weight: 600;">{{ result.ledger_record.side }}</span> | 
+                                    {{ result.ledger_record.instrument }} | 
+                                    <strong style="color: var(--text-main);">${{ result.ledger_record.amount }}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div style="color: var(--text-muted); font-style: italic; padding: 0.5rem 0;">Record Missing</div>
+                    {% endif %}
+                </td>
+                
+                <!-- Partner Statement Column -->
+                <td style="padding: 1rem; border-left: 1px solid rgba(0,0,0,0.05); border-top-right-radius: 8px; border-bottom-right-radius: 8px;">
+                    {% if result.statement_record %}
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            {% if result.match_type == 'UNMATCHED_STATEMENT' and not result.resolved_by_human %}
+                                <input type="radio" name="statement_select" id="stmt_{{ result.statement_record.id }}" value="{{ result.statement_record.id }}" onchange="checkSelections()" style="display: none;">
+                                <label for="stmt_{{ result.statement_record.id }}" class="btn-resolve">Resolve</label>
+                            {% endif %}
+                            <div>
+                                <div style="font-weight: 600; color: var(--text-main); margin-bottom: 4px;">{{ result.statement_record.transaction_id }}</div>
+                                <div style="font-size: 0.85rem; color: var(--text-muted);">
+                                    <span style="display: inline-block; min-width: 40px; font-weight: 600;">{{ result.statement_record.side }}</span> | 
+                                    {{ result.statement_record.instrument }} | 
+                                    <strong style="color: var(--text-main);">${{ result.statement_record.amount }}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div style="color: var(--text-muted); font-style: italic; padding: 0.5rem 0;">Record Missing</div>
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
-    {% else %}
-    <p style="color: var(--text-muted);">No discrepancies found! 🎉</p>
-    {% endif %}
-</div>
-
-<div class="glass-card" style="margin-bottom: 2rem;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h2>Manual Resolution</h2>
-        <div>
-            <button id="btn-accept-unpaired" class="btn" style="background: var(--warning); margin-right: 1rem;" disabled>Accept as Unpaired</button>
-            <button id="btn-manual-match" class="btn" style="background: var(--success);" disabled>Link Selected</button>
-        </div>
-    </div>
-    <p style="color: var(--text-muted); margin-bottom: 1rem;">
-        Select one unmatched ledger record and one unmatched statement record to link them. 
-        Or, select exactly ONE record and click "Accept as Unpaired" if it genuinely has no match. 
-        <a href="#" onclick="clearSelections(); return false;" style="color: var(--primary); margin-left: 10px;">Clear Selections</a>
-    </p>
-    
-    <div class="grid-2">
-        <div style="border: 1px solid var(--danger); padding: 1rem; border-radius: 8px;">
-            <h3>Unmatched Ledger (Yours)</h3>
-            {% if unmatched_ledger %}
-            <table id="table-ledger">
-                <thead>
-                    <tr>
-                        <th>Select</th>
-                        <th>ID</th>
-                        <th>Asset</th>
-                        <th>Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for match in unmatched_ledger %}
-                    {% if not match.resolved_by_human %}
-                    <tr>
-                        <td><input type="radio" name="ledger_select" value="{{ match.ledger_record.id }}" onchange="checkSelections()"></td>
-                        <td>{{ match.ledger_record.transaction_id }}</td>
-                        <td>{{ match.ledger_record.instrument }}</td>
-                        <td>${{ match.ledger_record.amount }}</td>
-                    </tr>
-                    {% endif %}
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <p style="color: var(--text-muted); margin-top: 1rem;">All clear!</p>
-            {% endif %}
-        </div>
-
-        <div style="border: 1px solid var(--warning); padding: 1rem; border-radius: 8px;">
-            <h3>Unmatched Statement (Theirs)</h3>
-            {% if unmatched_statement %}
-            <table id="table-statement">
-                <thead>
-                    <tr>
-                        <th>Select</th>
-                        <th>Ref</th>
-                        <th>Asset</th>
-                        <th>Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for match in unmatched_statement %}
-                    {% if not match.resolved_by_human %}
-                    <tr>
-                        <td><input type="radio" name="statement_select" value="{{ match.statement_record.id }}" onchange="checkSelections()"></td>
-                        <td>{{ match.statement_record.transaction_id }}</td>
-                        <td>{{ match.statement_record.instrument }}</td>
-                        <td>${{ match.statement_record.amount }}</td>
-                    </tr>
-                    {% endif %}
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <p style="color: var(--text-muted); margin-top: 1rem;">All clear!</p>
-            {% endif %}
-        </div>
-    </div>
 </div>
 
 <script>
@@ -140,6 +168,17 @@
             btnAccept.disabled = true;
         }
     }
+
+    // Allow clicking the resolve buttons to toggle them on and off
+    document.querySelectorAll('.btn-resolve').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault(); // Stop label from instantly checking it
+            const radioId = this.getAttribute('for');
+            const radio = document.getElementById(radioId);
+            radio.checked = !radio.checked; // Toggle the state
+            checkSelections();
+        });
+    });
 
     document.getElementById('btn-manual-match').addEventListener('click', async () => {
         const ledgerId = document.querySelector('input[name="ledger_select"]:checked').value;
@@ -198,47 +237,5 @@
         }
     });
 </script>
-
-<div class="glass-card" style="margin-top: 2rem;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h2>Matched Records</h2>
-        <span class="badge" style="background: #e2e8f0; color: var(--text-muted);">Cancelled/Ignored Records: {{ ignored_matches|length }}</span>
-    </div>
-    <p style="color: var(--text-muted); margin-bottom: 1rem;">Exact Matches ({{ exact_matches|length }}) and Manual Matches ({{ manual_matches|length }}) that reconciled perfectly or were manually linked.</p>
-    
-    {% if exact_matches or manual_matches %}
-    <table>
-        <thead>
-            <tr>
-                <th>Type</th>
-                <th>Asset</th>
-                <th>Ledger ID</th>
-                <th>Statement Ref</th>
-                <th>Amount</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for match in manual_matches %}
-            <tr>
-                <td><span class="badge badge-success">Manual</span></td>
-                <td><strong>{{ match.ledger_record.instrument }}</strong></td>
-                <td>{{ match.ledger_record.transaction_id }}</td>
-                <td>{{ match.statement_record.transaction_id }}</td>
-                <td>${{ match.ledger_record.amount }}</td>
-            </tr>
-            {% endfor %}
-            {% for match in exact_matches %}
-            <tr>
-                <td><span class="badge badge-success">Exact</span></td>
-                <td><strong>{{ match.ledger_record.instrument }}</strong></td>
-                <td>{{ match.ledger_record.transaction_id }}</td>
-                <td>{{ match.statement_record.transaction_id }}</td>
-                <td>${{ match.ledger_record.amount }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% endif %}
-</div>
 
 {% endblock %}

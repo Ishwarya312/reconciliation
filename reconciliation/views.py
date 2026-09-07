@@ -33,14 +33,22 @@ def run_details(request, run_id):
     run = get_object_or_404(ReconciliationRun, id=run_id)
     results = run.results.all().select_related('ledger_record', 'statement_record')
     
+    exact_matches = results.filter(match_type='EXACT')
+    manual_matches = results.filter(match_type='MANUAL')
+    unmatched_ledger = results.filter(match_type='UNMATCHED_LEDGER')
+    unmatched_statement = results.filter(match_type='UNMATCHED_STATEMENT')
+    
     context = {
         'run': run,
-        'exact_matches': results.filter(match_type='EXACT'),
+        'results': results,
+        'exact_matches': exact_matches,
         'fuzzy_matches': results.filter(match_type='FUZZY'),
-        'manual_matches': results.filter(match_type='MANUAL'),
-        'unmatched_ledger': results.filter(match_type='UNMATCHED_LEDGER'),
-        'unmatched_statement': results.filter(match_type='UNMATCHED_STATEMENT'),
+        'manual_matches': manual_matches,
+        'unmatched_ledger': unmatched_ledger,
+        'unmatched_statement': unmatched_statement,
         'ignored_matches': results.filter(match_type='IGNORED'),
+        'matched_count': exact_matches.count() + manual_matches.count(),
+        'unmatched_count': unmatched_ledger.count() + unmatched_statement.count(),
     }
     return render(request, 'reconciliation/run_details.html', context)
 
